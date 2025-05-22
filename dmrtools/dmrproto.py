@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import enum
 import random
 
@@ -241,6 +243,11 @@ class DMRPPacketRepeaterClose(DMRPBasePeerPacket):
     PKT_SIZE = 9
 
 
+class DMRPPacketBeacon(DMRPBasePeerPacket):
+    PKT_TYPE = b'RPTSBKN'
+    PKT_SIZE = 11
+
+
 class DMRPPacketAck(DMRPBasePeerPacket):
     PKT_TYPE = b'RPTACK'
     PKT_SIZE = 10
@@ -335,6 +342,31 @@ class DMRPPacketData(DMRPBasePeerPacket):
 
     CallType = enum.StrEnum('CallType', ['UNIT', 'GROUP'])
 
+    class VoiceType(enum.Enum):
+        NONE    = 0b000000
+        HEAD    = 0b100001
+        BURST_A = 0b010000
+        BURST_B = 0b000001
+        BURST_C = 0b000010
+        BURST_D = 0b000011
+        BURST_E = 0b000100
+        BURST_F = 0b000101
+        TERM    = 0b100010
+
+        @staticmethod
+        def from_value(value: int) -> DMRPPacketData.VoiceType:
+            try:
+                return DMRPPacketData.VoiceType(value)
+            except ValueError:
+                return DMRPPacketData.VoiceType.NONE
+
+    """
+    bits:
+    | 7    | 6         | 5    4     | 3 2 1 0 |
+    | slot | call_type | frame_type | vseq    |
+    |                  |      voice_type      |
+    """
+
     seq       = DMRPFieldInt('seq', 4, 1)
     src_id    = DMRPFieldInt('src_id', 5, 3)
     dst_id    = DMRPFieldInt('dst_id', 8, 3)
@@ -366,17 +398,17 @@ class DMRPPacketData(DMRPBasePeerPacket):
     # call_type
     def get_call_type(self) -> CallType:
         if self._data is None or self._data[15] & 0x40 != 0:
-            return self.CallType.UNIT
-        return self.CallType.GROUP
+            return DMRPPacketData.CallType.UNIT
+        return DMRPPacketData.CallType.GROUP
 
     def set_call_type(self, call_type: CallType) -> None:
-        if call_type not in self.CallType:
-            raise DMRPFieldOutOfRangeException(
-                "call_type", '|'.join(ct.value for ct in self.CallType))
+        if call_type not in DMRPPacketData.CallType:
+            raise DMRPFieldOutOfRangeException("call_type", '|'.join(
+                    ct.value for ct in DMRPPacketData.CallType))
         if self._data is not None:
             self._data[15] = (
                 (self._data[15] & ~0x40) |
-                (0x40 if call_type == self.CallType.UNIT else 0))
+                (0x40 if call_type == DMRPPacketData.CallType.UNIT else 0))
 
     call_type = property(get_call_type, set_call_type)
 
@@ -408,10 +440,21 @@ class DMRPPacketData(DMRPBasePeerPacket):
 
     vseq = property(get_vseq, set_vseq)
 
+    # voice_type
+    def get_voice_type(self) -> VoiceType:
+        return DMRPPacketData.VoiceType.from_value(self.bits & 0x3F)
+
+    def set_voice_type(self, voice_type: VoiceType) -> None:
+        if self._data is not None:
+            self._data[15] = ((self._data[15] & ~0x3F) |
+                              (voice_type.value & 0x3F))
+
+    voice_type = property(get_voice_type, set_voice_type)
+
     # is_voice_term
     @property
     def is_voice_term(self) -> bool:
-        return self.frame_type == 0x2 and self.vseq == 0x2
+        return self.voice_type == DMRPPacketData.VoiceType.TERM
 
     def __str__(self) -> str:
         return self.format()
@@ -437,8 +480,9 @@ class DMRPPacketData(DMRPBasePeerPacket):
                 f"stream:{self.stream_id} "
                 f"{self.call_type.name} TS{self.slot} "
                 f"src:{self.src_id} dst:{self.dst_id} "
-                f"bits:{self.bits:08b} frame_type:{self.frame_type} "
-                f"vseq:{self.vseq} seq:{self.seq} "
+                f"bits:{self.bits:08b} "
+                f"frame_type:{self.frame_type} vseq:{self.vseq} "
+                f"voice_type:{self.voice_type.name} seq:{self.seq} "
                 f"ber:{self.ber} rssi:{self.rssi} "
                 f"vt:{'T' if self.is_voice_term else 'f'}")
 
@@ -471,7 +515,7 @@ class DMRPPacketFactory:
             DMRPPacketMasterNoAck,
             DMRPPacketMasterClose, DMRPPacketRepeaterClose,
             DMRPPacketLogin, DMRPPacketAck, DMRPPacketAuth, DMRPPacketConfig,
-            DMRPPacketPing, DMRPPacketPong, DMRPPacketSalt,
+            DMRPPacketPing, DMRPPacketPong, DMRPPacketSalt, DMRPPacketBeacon,
             DMRPPacketData, DMRPPacketTalkerAlias,
         ]
 
