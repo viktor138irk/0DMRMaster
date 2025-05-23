@@ -1,7 +1,7 @@
 import logging
 import time
 
-from dmrmaster import DMRMaster
+from dmrtools import DMRMaster
 from dmrtools import AllowAllPeerAuth, ListPeerAuth
 from dmrtools.parrot_app import ParrotApp
 

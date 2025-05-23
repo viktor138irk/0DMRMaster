@@ -72,7 +72,8 @@ and exposes http API/dashboard on `8000/tcp` (may be changed with `--web-port` c
 - ✔️ unit call routing
 - ✔️ allow single peer id check
 - ✔️ TA support (DMRA packet)
-- 🥕 routing entity (1 timeslot == 1 routing entity)
+- 🥕 dmr internal burst structure decoding (to fix rf fields and get ambe)
+- 🥕 routing (1 timeslot == 1 routing entity)
 - 🥕 only one call per ts for peer (per routing entity)
 - 🥕 apps unit call routing (routing entity for app)
 - 🥕 configuration
@@ -80,7 +81,6 @@ and exposes http API/dashboard on `8000/tcp` (may be changed with `--web-port` c
 - 🥕 resolve id to callsigns
 - 🥕 routing 2: group subscriptions
 - 🥕 data calls (messages)
-- 🥕 dmr internal burst structure decoding (to fix rf fields and get ambe)
 - 🥕 ambe decode/encode
 - 🥕 log voice calls as files
 - 🥕 TA support 2 (inside DMRD packets)
@@ -95,6 +95,13 @@ and Radio spectrum Matters (ERM);
 Digital Mobile Radio (DMR) Systems;
 Part 1: DMR Air Interface (AI) protocol
 https://www.etsi.org/deliver/etsi_ts/102300_102399/10236101/01.02.01_60/ts_10236101v010201p.pdf
+
+- ETSI TS 102 361-2 V2.3.1 (2016-02)
+Electromagnetic compatibility
+and Radio spectrum Matters (ERM);
+Digital Mobile Radio (DMR) Systems;
+Part 2: DMR voice and generic services and facilities
+https://www.etsi.org/deliver/etsi_ts/102300_102399/10236102/02.03.01_60/ts_10236102v020301p.pdf
 
 - MMDVMHost by Jonathan Naylor, G4KLX
 https://github.com/g4klx/MMDVMHost

@@ -5,37 +5,12 @@ import random
 
 from abc import ABC
 from hashlib import sha256
-from typing import Type, Self, Any
+from typing import Type, Self
 
-
-#############################
-# Local exception classes
-#############################
-class DMRPFieldOutOfRangeException(Exception):
-    """
-    Exception raised when a packet field value is out of the allowed or expected range.
-
-    Attributes:
-        field: The name or identifier of the problematic field.
-        typename: The expected type or range description for the field.
-    """
-    def __init__(self, field, typename) -> None:
-        super().__init__(f"Field out of range: {field} must be {typename}")
-
-
-class DMRPUnknownPacketTypeException(Exception):
-    """
-    Exception raised when the packet factory cannot recognize the packet type
-    from the given input data.
-    """
-    pass
-
-
-class DMRPBadPacket(Exception):
-    """
-    Exception raised when a packet is structurally invalid or corrupted.
-    """
-    pass
+from .base_fields import DMRPFieldInt, DMRPFieldBytes, DMRPFieldStr
+from .exceptions import DMRPBadPacket
+from .exceptions import DMRPFieldOutOfRangeException
+from .exceptions import DMRPUnknownPacketTypeException
 
 
 #############################
@@ -43,81 +18,6 @@ class DMRPBadPacket(Exception):
 #############################
 def calc_password_hash(salt: bytes, password: str) -> bytes:
     return sha256(salt + password.encode()).digest()
-
-
-#############################
-# Field classes
-#############################
-class DMRPFieldBase(ABC):
-    def __init__(self, name: str, offset: int, bytelen: int) -> None:
-        self.name, self.offset, self.bytelen = name, offset, bytelen
-        self.eoffset = offset + bytelen
-        self.typename = f"bytes{self.bytelen}"
-
-    def __get__(self, obj, cls = None) -> Any:
-        return bytes(obj._data[self.offset:self.eoffset])
-
-    def __set__(self, obj, value: Any) -> None:
-        if not isinstance(value, bytes) or self.bytelen != len(value):
-            raise DMRPFieldOutOfRangeException(self.name, self.typename)
-        obj._data[self.offset:self.eoffset] = value
-
-
-class DMRPFieldBytes(DMRPFieldBase):
-    def __get__(self, obj, cls = None) -> bytes:
-        return super().__get__(obj, cls)
-
-    def __set__(self, obj, value: bytes) -> None:
-        super().__set__(obj, value)
-
-
-class DMRPFieldStr(DMRPFieldBase):
-    def __init__(self, name: str, offset: int, bytelen: int,
-                 pad_with: bytes = b'\x20') -> None:
-        super().__init__(name, offset, bytelen)
-        self.typename = 'str'
-        self.pad_with = pad_with
-
-    def __get__(self, obj, cls = None) -> str:
-        return (super().__get__(obj, cls).strip(b'\x20\x00')
-                .decode(encoding='ascii', errors='ignore'))
-
-    def __set__(self, obj, value: str) -> None:
-        bvalue = value.encode()
-        if len(bvalue) > self.bytelen:
-            bvalue = bvalue[:self.bytelen]
-        bvalue = bvalue.ljust(self.bytelen, self.pad_with)
-        super().__set__(obj, bvalue)
-
-
-class DMRPFieldInt(DMRPFieldBase):
-    def __init__(self, name: str, offset: int, bytelen: int) -> None:
-        super().__init__(name, offset, bytelen)
-        self.typename = f"uint{str(bytelen * 8)}"
-
-    def __get__(self, obj, cls = None) -> int:
-        return int.from_bytes(super().__get__(obj, cls), byteorder="big")
-
-    def __set__(self, obj, value: int) -> None:
-        if not (0 <= value < 1<<(self.bytelen * 8)):
-            raise DMRPFieldOutOfRangeException(self.name, self.typename)
-        super().__set__(obj, value.to_bytes(self.bytelen, byteorder="big"))
-
-
-class DMRPFieldPeerAuto(DMRPFieldInt):
-    def fixoffset(self, offset: int) -> None:
-        self.offset, self.eoffset = offset, offset + self.bytelen
-
-    def __init__(self, name: str) -> None:
-        super().__init__(name, 4, 4)
-
-    def __get__(self, obj, cls = None) -> int:
-        self.fixoffset(len(obj.PKT_TYPE))
-        return super().__get__(obj, cls)
-
-    def __set__(self, obj, value: int) -> None:
-        self.fixoffset(len(obj.PKT_TYPE))
-        super().__set__(obj, value)
 
 
 #############################
@@ -206,6 +106,25 @@ class DMRPBasePeerPacket(DMRPBasePacket, ABC):
     Abstract base class (more specific), which handles typical packets with
     type header and peer_id field
     """
+    class DMRPFieldPeerAuto(DMRPFieldInt):
+        """
+        Int field, which autodetects header length (PKT_TYPE) and
+        offsets peer_id for its len
+        """
+        def fixoffset(self, offset: int) -> None:
+            self.offset, self.eoffset = offset, offset + self.bytelen
+
+        def __init__(self, name: str) -> None:
+            super().__init__(name, 4, 4)
+
+        def __get__(self, obj, cls = None) -> int:
+            self.fixoffset(len(obj.PKT_TYPE))
+            return super().__get__(obj, cls)
+
+        def __set__(self, obj, value: int) -> None:
+            self.fixoffset(len(obj.PKT_TYPE))
+            super().__set__(obj, value)
+
     # peer_id
     peer_id: DMRPFieldInt = DMRPFieldPeerAuto('peer_id')
 
@@ -494,7 +413,7 @@ class DMRPPacketFactory:
     and user-registered custom packet types.
     """
 
-    __instance: Self|None = None
+    __instance: DMRPPacketFactory|None = None
 
     @classmethod
     def fd(cls, data: bytes) -> DMRPBasePacket:
