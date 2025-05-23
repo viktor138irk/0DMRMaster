@@ -8,9 +8,10 @@ from hashlib import sha256
 from typing import Type, Self
 
 from .base_fields import DMRPFieldInt, DMRPFieldBytes, DMRPFieldStr
-from .exceptions import DMRPBadPacket
+from .exceptions import DMRPBadPacketException
 from .exceptions import DMRPFieldOutOfRangeException
 from .exceptions import DMRPUnknownPacketTypeException
+from .etsi_l2 import DMRPL2Base, DMRPL2FullLC, DMRPL2VoiceBurst
 
 
 #############################
@@ -66,14 +67,14 @@ class DMRPBasePacket(ABC):
             data (bytes): The raw data from which to create a packet.
 
         Raises:
-            DMRPBadPacket: if size or type doesn't match
+            DMRPBadPacketException: if size or type doesn't match
         """
         self._data = None
         if not data.startswith(self.PKT_TYPE):
-            raise DMRPBadPacket(
+            raise DMRPBadPacketException(
                 f"Bad packet type: '{data[0:4]!r}', expected '{self.PKT_TYPE!r}'")
         if len(data) != self.PKT_SIZE:
-            raise DMRPBadPacket(
+            raise DMRPBadPacketException(
                 f"Bad packet size: {len(data)}, expected {self.PKT_SIZE}")
         self._data = bytearray(data)
 
@@ -296,6 +297,10 @@ class DMRPPacketData(DMRPBasePeerPacket):
     ber       = DMRPFieldInt('ber', 53, 1)
     rssi      = DMRPFieldInt('rssi', 54, 1)
 
+    def __init__(self, data: bytes|None = None) -> None:
+        self.__l2: DMRPL2Base|None = None
+        super().__init__(data)
+
     def set_random_stream_id(self) -> None:
         self.stream_id = int.from_bytes(random.randbytes(4), byteorder="big")
 
@@ -375,6 +380,42 @@ class DMRPPacketData(DMRPBasePeerPacket):
     def is_voice_term(self) -> bool:
         return self.voice_type == DMRPPacketData.VoiceType.TERM
 
+    def get_l2(self) -> DMRPL2Base|None:
+        if self.__l2 is not None:
+            return self.__l2
+
+        if self.voice_type in (DMRPPacketData.VoiceType.HEAD,
+                               DMRPPacketData.VoiceType.TERM):
+            self.__l2 = DMRPL2FullLC(self.dmr_data)
+
+        if self.voice_type in (DMRPPacketData.VoiceType.BURST_A,
+                               DMRPPacketData.VoiceType.BURST_B,
+                               DMRPPacketData.VoiceType.BURST_C,
+                               DMRPPacketData.VoiceType.BURST_D,
+                               DMRPPacketData.VoiceType.BURST_E,
+                               DMRPPacketData.VoiceType.BURST_F):
+            self.__l2 = DMRPL2VoiceBurst(self.dmr_data)
+
+        return self.__l2
+
+    def get_full_lc(self) -> bytes|None:
+        l2 = self.get_l2()
+        if type(l2) is DMRPL2FullLC:
+            return l2.get_full_lc()
+        return None
+
+    def get_emb_lc(self) -> bytes|None:
+        l2 = self.get_l2()
+        if type(l2) is DMRPL2VoiceBurst:
+            return l2.get_emb_lc()
+        return None
+
+    def get_lc(self) -> bytes:
+        if ((lcdata := self.get_full_lc()) is not None or
+            (lcdata := self.get_emb_lc()) is not None):
+                return lcdata
+        return b""
+
     def __str__(self) -> str:
         return self.format()
 
@@ -391,7 +432,13 @@ class DMRPPacketData(DMRPBasePeerPacket):
                         f"src:{self.src_id} dst:{self.dst_id} "
                         f"bits:{self.bits:08b}")
             case 'ext':
-                return str(self) + f" data:{self.dmr_data.hex()}"
+                return (self.format('') +
+                        f" data:{self.dmr_data.hex()}")
+
+            case 'l2':
+                return (self.format('') +
+                        f" lc:{self.get_lc().hex()}" +
+                        f" data:{self.dmr_data.hex()}")
 
         # default
         return (f"{self.pkt_type} "

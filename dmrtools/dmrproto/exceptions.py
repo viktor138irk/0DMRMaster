@@ -18,8 +18,15 @@ class DMRPUnknownPacketTypeException(Exception):
     pass
 
 
-class DMRPBadPacket(Exception):
+class DMRPBadPacketException(Exception):
     """
-    Exception raised when a packet is structurally invalid or corrupted.
+    Exception raised when a packet is structurally invalid or corrupted
+    """
+    pass
+
+
+class DMRPL2BadDataException(Exception):
+    """
+    Exception raised when L2 data is invalid or corrupted.
     """
     pass
