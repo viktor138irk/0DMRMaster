@@ -3,8 +3,13 @@ import asyncio
 import logging
 import traceback
 
+from bitarray import bitarray
+
 from dmrtools import DMRPPacketFactory
 from dmrtools import hexdump
+from dmrtools.dmrproto import DMRPL2FullLC, DMRPL2VoiceBurst
+from dmrtools.dmrproto import DMRPPacketData
+from dmrtools.dmrproto import EmbLCAssembler, LCFactory
 
 
 def setup_logger(log_file=None):
@@ -13,21 +18,36 @@ def setup_logger(log_file=None):
         handlers.append(logging.FileHandler(log_file))
 
     logging.basicConfig(
-        level=logging.INFO,
+        # level=logging.INFO,
+        level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=handlers
     )
 
 
+elca: dict[int, EmbLCAssembler] = dict()
+
 def get_packet_details(data):
-    if not hasattr(get_packet_details, 'pf'):
-        get_packet_details.pf = DMRPPacketFactory()
     try:
-        p = get_packet_details.pf.from_data(data)
-        if p.pkt_type == 'DMRD':
-            return f"{p:ext}\n"
-        return f"{str(p)}\n"
+        p = DMRPPacketFactory.fd(data)
+        if type(p) is DMRPPacketData:
+            emblcinfo = ""
+            if (full_lc := p.get_full_lc()) is not None:
+                lcdec = LCFactory.fd(full_lc)
+                emblcinfo = f"FullLC:{hexdump(full_lc)}\n{lcdec}\n"
+                return f"{p:l2}\n" + emblcinfo
+            if p.stream_id not in elca:
+                elca[p.stream_id] = EmbLCAssembler()
+            if elca[p.stream_id].process_voicedata(p):
+                emblcdata = elca[p.stream_id].decode()
+                lcdec = LCFactory.fd(emblcdata)
+                emblcinfo = f"EmbLC:{hexdump(emblcdata)}\n{lcdec}\n"
+                del elca[p.stream_id]
+            if p.is_voice_term:
+                del elca[p.stream_id]
+            return f"{p:l2}\n" + emblcinfo
+        return f"{p}\n"
     except:
         return f"Exception while decoding packet:\n{traceback.format_exc()}"
 
