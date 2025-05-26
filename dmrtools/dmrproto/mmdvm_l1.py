@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import enum
 import random
 
 from abc import ABC
 from hashlib import sha256
-from typing import Type, Self
+from typing import Type, Self, TypeAlias
 
 from .base_fields import DMRPFieldInt, DMRPFieldBytes, DMRPFieldStr
+from .enums import CallType, VoiceType
 from .exceptions import DMRPBadPacketException
 from .exceptions import DMRPFieldOutOfRangeException
 from .exceptions import DMRPUnknownPacketTypeException
@@ -260,25 +260,8 @@ class DMRPPacketData(DMRPBasePeerPacket):
     PKT_TYPE = b'DMRD'
     PKT_SIZE = 55
 
-    CallType = enum.StrEnum('CallType', ['UNIT', 'GROUP'])
-
-    class VoiceType(enum.Enum):
-        NONE    = 0b000000
-        HEAD    = 0b100001
-        BURST_A = 0b010000
-        BURST_B = 0b000001
-        BURST_C = 0b000010
-        BURST_D = 0b000011
-        BURST_E = 0b000100
-        BURST_F = 0b000101
-        TERM    = 0b100010
-
-        @staticmethod
-        def from_value(value: int) -> DMRPPacketData.VoiceType:
-            try:
-                return DMRPPacketData.VoiceType(value)
-            except ValueError:
-                return DMRPPacketData.VoiceType.NONE
+    CallType: TypeAlias = CallType  # legacy alias
+    VoiceType: TypeAlias = VoiceType  # legacy alias
 
     """
     bits:
@@ -322,17 +305,17 @@ class DMRPPacketData(DMRPBasePeerPacket):
     # call_type
     def get_call_type(self) -> CallType:
         if self._data is None or self._data[15] & 0x40 != 0:
-            return DMRPPacketData.CallType.UNIT
-        return DMRPPacketData.CallType.GROUP
+            return CallType.UNIT
+        return CallType.GROUP
 
     def set_call_type(self, call_type: CallType) -> None:
-        if call_type not in DMRPPacketData.CallType:
-            raise DMRPFieldOutOfRangeException("call_type", '|'.join(
-                    ct.value for ct in DMRPPacketData.CallType))
+        if call_type not in CallType:
+            raise DMRPFieldOutOfRangeException(
+                "call_type", '|'.join(ct.value for ct in CallType))
         if self._data is not None:
             self._data[15] = (
                 (self._data[15] & ~0x40) |
-                (0x40 if call_type == DMRPPacketData.CallType.UNIT else 0))
+                (0x40 if call_type == CallType.UNIT else 0))
 
     call_type = property(get_call_type, set_call_type)
 
@@ -366,7 +349,7 @@ class DMRPPacketData(DMRPBasePeerPacket):
 
     # voice_type
     def get_voice_type(self) -> VoiceType:
-        return DMRPPacketData.VoiceType.from_value(self.bits & 0x3F)
+        return VoiceType.from_value(self.bits & 0x3F)
 
     def set_voice_type(self, voice_type: VoiceType) -> None:
         if self._data is not None:
@@ -378,22 +361,22 @@ class DMRPPacketData(DMRPBasePeerPacket):
     # is_voice_term
     @property
     def is_voice_term(self) -> bool:
-        return self.voice_type == DMRPPacketData.VoiceType.TERM
+        return self.voice_type == VoiceType.TERM
 
     def get_l2(self) -> DMRPL2Base|None:
         if self.__l2 is not None:
             return self.__l2
 
-        if self.voice_type in (DMRPPacketData.VoiceType.HEAD,
-                               DMRPPacketData.VoiceType.TERM):
+        if self.voice_type in (VoiceType.HEAD,
+                               VoiceType.TERM):
             self.__l2 = DMRPL2FullLC(self.dmr_data)
 
-        if self.voice_type in (DMRPPacketData.VoiceType.BURST_A,
-                               DMRPPacketData.VoiceType.BURST_B,
-                               DMRPPacketData.VoiceType.BURST_C,
-                               DMRPPacketData.VoiceType.BURST_D,
-                               DMRPPacketData.VoiceType.BURST_E,
-                               DMRPPacketData.VoiceType.BURST_F):
+        if self.voice_type in (VoiceType.BURST_A,
+                               VoiceType.BURST_B,
+                               VoiceType.BURST_C,
+                               VoiceType.BURST_D,
+                               VoiceType.BURST_E,
+                               VoiceType.BURST_F):
             self.__l2 = DMRPL2VoiceBurst(self.dmr_data)
 
         return self.__l2
