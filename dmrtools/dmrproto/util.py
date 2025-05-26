@@ -58,7 +58,6 @@ class EmbLCAssembler:
         self.vseq = p.vseq
 
         # logging.debug(f"assembled emblc's: {self.lcs}")
-
         return burst_n == 3
 
     def decode(self) -> bytes|None:

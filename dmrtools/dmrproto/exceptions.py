@@ -34,3 +34,13 @@ class DMRPUnknownPacketTypeException(FactoryException):
     from the given input data.
     """
     pass
+
+
+class DMRPUnknownLCTypeException(FactoryException):
+    """
+    Exception raised when the lc analyzer factory cannot recognize the
+    lc type from the given input data.
+    """
+    pass
+
+
