@@ -4,14 +4,15 @@ import random
 
 from abc import ABC
 from hashlib import sha256
-from typing import Type, Self, TypeAlias
+from typing import Self, TypeAlias, NoReturn
 
 from .base_fields import DMRPFieldInt, DMRPFieldBytes, DMRPFieldStr
 from .enums import CallType, VoiceType
+from .etsi_l2 import DMRPL2Base, DMRPL2FullLC, DMRPL2VoiceBurst
 from .exceptions import DMRPBadPacketException
 from .exceptions import DMRPFieldOutOfRangeException
 from .exceptions import DMRPUnknownPacketTypeException
-from .etsi_l2 import DMRPL2Base, DMRPL2FullLC, DMRPL2VoiceBurst
+from .factory import BaseFactory, IFactoryProduced
 
 
 #############################
@@ -24,7 +25,7 @@ def calc_password_hash(salt: bytes, password: str) -> bytes:
 #############################
 # Packet classes hierarchy
 #############################
-class DMRPBasePacket(ABC):
+class DMRPBasePacket(IFactoryProduced, ABC):
     """
     Abstract base packet class.
 
@@ -436,66 +437,26 @@ class DMRPPacketData(DMRPBasePeerPacket):
                 f"vt:{'T' if self.is_voice_term else 'f'}")
 
 
-class DMRPPacketFactory:
+class DMRPPacketFactory(BaseFactory):
     """
     A factory class responsible for creating instances of DMRP packet classes
     based on packet data. This class supports both predefined packet types
     and user-registered custom packet types.
     """
 
-    __instance: DMRPPacketFactory|None = None
-
-    @classmethod
-    def fd(cls, data: bytes) -> DMRPBasePacket:
-        """
-        Short singleton version of from_data method
-        """
-        if cls.__instance is None:
-            cls.__instance = cls()
-        return cls.__instance.from_data(data)
-
     def __init__(self) -> None:
         """
         Initializes the packet factory with a list of all packet classes.
-        These classes must implement a `detect_by_data` class method to
-        determine whether they can handle the given input data.
         """
-        self.__pclasses = [
+        super().__init__([
             DMRPPacketMasterNoAck,
             DMRPPacketMasterClose, DMRPPacketRepeaterClose,
             DMRPPacketLogin, DMRPPacketAck, DMRPPacketAuth, DMRPPacketConfig,
             DMRPPacketPing, DMRPPacketPong, DMRPPacketSalt, DMRPPacketBeacon,
             DMRPPacketData, DMRPPacketTalkerAlias,
-        ]
+        ])
 
-    def register_custom_packet(self, cls: Type[DMRPBasePacket]) -> None:
-        """
-        Registers a custom packet class to the factory.
-
-        Args:
-            cls: A class that implements the static method `detect_by_data`.
-                 If this method returns True, the class is used to create a packet instance.
-        """
-        self.__pclasses.append(cls)
-
-    def from_data(self, data: bytes) -> DMRPBasePacket:
-        """
-        Attempts to create an DMRP packet instance of corresponding packet
-        class based on packet data.
-
-        Args:
-            data (bytes): The raw data from which to create a packet.
-
-        Returns:
-            DMRPBasePacket: An instance of a subclass of DMRPBasePacket that matches the data.
-
-        Raises:
-            DMRPUnknownPacketTypeException: If no registered packet class can handle the data.
-        """
-        for cls in self.__pclasses:
-            if cls.detect_by_data(data):
-                return cls(data)
-
+    def not_found(self, data: bytes) -> NoReturn:
         ptypestr = data[0:4].decode(encoding='ascii', errors='ignore')
         raise DMRPUnknownPacketTypeException(f"Unknown packet type {ptypestr}")
 

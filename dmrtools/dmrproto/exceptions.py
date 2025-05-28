@@ -10,14 +10,6 @@ class DMRPFieldOutOfRangeException(Exception):
         super().__init__(f"Field out of range: {field} must be {typename}")
 
 
-class DMRPUnknownPacketTypeException(Exception):
-    """
-    Exception raised when the packet factory cannot recognize the packet type
-    from the given input data.
-    """
-    pass
-
-
 class DMRPBadPacketException(Exception):
     """
     Exception raised when a packet is structurally invalid or corrupted
@@ -28,5 +20,17 @@ class DMRPBadPacketException(Exception):
 class DMRPL2BadDataException(Exception):
     """
     Exception raised when L2 data is invalid or corrupted.
+    """
+    pass
+
+
+class FactoryException(Exception):
+    pass
+
+
+class DMRPUnknownPacketTypeException(FactoryException):
+    """
+    Exception raised when the packet factory cannot recognize the packet type
+    from the given input data.
     """
     pass
