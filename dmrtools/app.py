@@ -16,14 +16,12 @@ class IAppDispatcher(ABC):
     Dispatcher interface for app
     """
     @abstractmethod
-    def inject_packet(self, p: DMRPPacketData) -> None:
-        pass
+    def inject_packet(self, p: DMRPPacketData) -> None: ...
 
 
 class IAppCallInterceptor(ABC):
     @abstractmethod
-    def process_call_packet(self, call: Call, p: DMRPPacketData) -> None:
-        pass
+    def process_call_packet(self, call: Call, p: DMRPPacketData) -> None: ...
 
 
 class App(ABC):
@@ -31,8 +29,7 @@ class App(ABC):
         self.dispatcher: IAppDispatcher|None = None
 
     @abstractmethod
-    def get_name(self) -> str:
-        pass
+    def get_name(self) -> str: ...
 
 
 class AppKeeper:

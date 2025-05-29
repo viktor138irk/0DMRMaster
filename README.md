@@ -1,8 +1,12 @@
 # 0DMRMaster
-Private DMR master server. Version 0.4.
-
+Private DMR master server. Version 0.5.
 Copyright &copy;2025  Alexander Mokrov, UR6LKW.
 
+This project is currently in public alpha and is under active development.
+Don't use it in production environment, interfaces may change.
+
+
+## License
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -18,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 ## Overview
-There is a few parts:
+This project contains:
 1. An implementation of homebrew dmr protocol (which is used by brandmeister and hblink). Not yet complete, but sufficient for #2 and #3.
 1. Decoding UDP proxy
 1. Basic private dmr master server
@@ -26,9 +30,9 @@ There is a few parts:
 ### Installation
 1. Check basic requirements:
     - Linux or Windows
-    - Python 3.13+
+    - Python 3.11+
 1. Clone/download the repo.
-1. Execute (linux example):
+1. Create environment and install requirements (linux example):
 ```
 $ python -m venv venv
 $ . venv/bin/activate
@@ -50,6 +54,7 @@ The running server listens for `62031/udp` as DMR service (may be changed with `
 and exposes http API/dashboard on `8000/tcp` (may be changed with `--web-port` command line argument):
 - API: http://YOUR-SERVER-IP:8000/api/dashboard
 - Web dashboard: http://YOUR-SERVER-IP:8000/dashboard/index.html
+![web dashboard](https://github.com/olympy/0DMRMaster/blob/master/doc/dashboard-screenshot.png?raw=true)
 
 
 
@@ -72,9 +77,10 @@ and exposes http API/dashboard on `8000/tcp` (may be changed with `--web-port` c
 - ✔️ unit call routing
 - ✔️ allow single peer id check
 - ✔️ TA support (DMRA packet)
-- 🥕 dmr internal burst structure decoding (to fix rf fields and get ambe)
+- ✔️ dmr internal structure decoding (get LC, voice data)
 - 🥕 routing (1 timeslot == 1 routing entity)
 - 🥕 only one call per ts for peer (per routing entity)
+- 🥕 dmr internal structure encoding (set LC, generate voice data)
 - 🥕 apps unit call routing (routing entity for app)
 - 🥕 configuration
 - 🥕 users configuration (allowed id and passes per id)

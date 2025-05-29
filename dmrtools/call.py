@@ -2,7 +2,10 @@ import logging
 
 from time import time
 
+from .dmrproto import CallLCDecoder
 from .dmrproto import DMRPPacketData
+from .dmrproto import LCBase, LCCall, LCLocation
+from .dmrproto import CallType
 from .peer import Peer
 
 
@@ -24,6 +27,10 @@ class Call:
         self.end_time: float|None = None
         self.packets: int = 0
         self.route_to: set[Peer]|None = None
+        self.ta: str|None = None
+        self.loc: LCLocation|None = None
+        self.rfcall: LCCall|None = None
+        self._lc_decoder: CallLCDecoder = CallLCDecoder(call_id)
         logging.info(f"Voice call beg {str(self)}")
 
     @property
@@ -56,9 +63,30 @@ class Call:
     def to_be_cleaned_log(self) -> bool:
         return self.is_ended and not self.check_timeout(self.CLEAN_LOG_TIMEOUT)
 
-    def packet_received(self) -> None:
+    def packet_received(self, p: DMRPPacketData|None = None) -> None:
         self.last_packet_time = time()
         self.packets += 1
+        if p is not None:
+            lc: LCBase|None = self._lc_decoder.process_voicedata(p)
+            if lc is not None:
+                logging.debug(f"New lc: {lc}")
+                self._update_lc_data()
+
+    def _update_lc_data(self) -> None:
+        if (self.ta is None
+            and (ta := self._lc_decoder.ta) is not None):
+                self.ta = ta
+                logging.info(f"Talker alias: '{ta}'")
+        if (self.loc is None
+            and (loc := self._lc_decoder.location) is not None):
+                self.loc = loc
+                logging.info(f"Location: {loc.lat} {loc.lon}")
+        if (self.rfcall is None
+            and (rfcall := self._lc_decoder.call) is not None):
+                self.rfcall = rfcall
+                dst: str = (('TG' if rfcall.call_type == CallType.GROUP else '')
+                            + str(rfcall.dst_id))
+                logging.info(f"RF call data: {rfcall.src_id}->{dst}")
 
     def check_timeout(self, timeout: float) -> bool:
         return time() - self.last_packet_time < timeout

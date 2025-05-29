@@ -12,20 +12,21 @@ from .enums import CallType
 from .exceptions import DMRPFieldOutOfRangeException
 from .exceptions import DMRPL2BadDataException
 from .exceptions import DMRPUnknownLCTypeException
-from .factory import BaseFactory, IFactoryProduced
+from .factory import AbstractFactory, IFactoryProduced
 
 
 class DMRPL2Base(ABC):
-    DataTypes = enum.StrEnum('DataTypes', [
-        'UNKNOWN', 'FULL_LC', 'VOICE_BURST'
-    ])
+    """
+    Base decoder of DMRD packet payload (layer2, 33 bytes)
+    """
+    DataTypes = enum.StrEnum('DataTypes', ['FULL_LC', 'VOICE_BURST'])
 
     def __init__(self, data: bytes) -> None:
         self.set_data(data)
 
     def set_data(self, data: bytes) -> None:
         if len(data) != 33:
-            DMRPL2BadDataException("Data must be 33 bytes long")
+            DMRPL2BadDataException("L2 data must be 33 bytes long")
 
         self.bitdata: bitarray = bitarray(data, endian='big')
 
@@ -33,8 +34,7 @@ class DMRPL2Base(ABC):
         return self.bitdata.tobytes()
 
     @abstractmethod
-    def get_data_type(self) -> DMRPL2Base.DataTypes:
-        pass
+    def get_data_type(self) -> DMRPL2Base.DataTypes: ...
 
 
 class DMRPL2FullLC(DMRPL2Base):
@@ -136,18 +136,12 @@ class LCTalkerAlias(LCBase):
         _7BIT   = 0b00
         ISO8    = 0b01
         UTF8    = 0b10
-        UTF16BF = 0b11
-
-    def __init__(
-        self, data: bytes|None,
-        format: Format = Format.ISO8) -> None:
-            super().__init__(data)
-            self.__format: LCTalkerAlias.Format = format
+        UTF16BE = 0b11
 
     # format
-    def get_format(self) -> Format:
+    def get_format(self) -> Format|None:
         if self.flco != 0x04:
-            return self.__format
+            return None
         return LCTalkerAlias.Format((self._data[2] & 0xC0) >> 6)
 
     def set_format(self, format: Format) -> None:
@@ -158,10 +152,10 @@ class LCTalkerAlias(LCBase):
     format = property(get_format, set_format)
 
     # len
-    def get_len(self) -> int:
+    def get_len(self) -> int|None:
         if self.flco != 0x04:
-            return 0
-        return (self._data[2] & 0x3E) >> 1
+            return None
+        return int((self._data[2] & 0x3E) >> 1)
 
     def set_len(self, len: int) -> None:
         if self.flco != 0x04:
@@ -174,18 +168,21 @@ class LCTalkerAlias(LCBase):
     len = property(get_len, set_len)
 
     @property
-    def ta_str(self) -> str:
-        # TODO: decode different fmts
+    def ta_data(self) -> bytes:
         if self.flco == 0x04:
-            return self._data[3:9].decode(encoding='ascii')
-        return self._data[2:9].decode(encoding='ascii')
+            if self.format == LCTalkerAlias.Format._7BIT:
+                data = self._data[2:9]
+                data[0] &= 1
+                return bytes(data)
+            return bytes(self._data[3:9])
+        return bytes(self._data[2:9])
 
     def __str__(self) -> str:
         return (f"LC TA {self.flco} fmt:{self.format.name} "
-                f"len:{self.len} str:{self.ta_str}")
+                f"len:{self.len} data:{self.ta_data.hex()}")
 
 
-class LCFactory(BaseFactory):
+class LCFactory(AbstractFactory[LCBase]):
     def __init__(self) -> None:
         """
         Initializes the lc analyzer factory with a list of all lc

@@ -12,7 +12,7 @@ from .etsi_l2 import DMRPL2Base, DMRPL2FullLC, DMRPL2VoiceBurst
 from .exceptions import DMRPBadPacketException
 from .exceptions import DMRPFieldOutOfRangeException
 from .exceptions import DMRPUnknownPacketTypeException
-from .factory import BaseFactory, IFactoryProduced
+from .factory import AbstractFactory, IFactoryProduced
 
 
 #############################
@@ -437,7 +437,7 @@ class DMRPPacketData(DMRPBasePeerPacket):
                 f"vt:{'T' if self.is_voice_term else 'f'}")
 
 
-class DMRPPacketFactory(BaseFactory):
+class DMRPPacketFactory(AbstractFactory[DMRPBasePacket]):
     """
     A factory class responsible for creating instances of DMRP packet classes
     based on packet data. This class supports both predefined packet types

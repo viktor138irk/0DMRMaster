@@ -19,12 +19,10 @@ class DMRPFieldBase(ABC):
         obj._data[self.offset:self.eoffset] = value
 
     @abstractmethod
-    def __get__(self, obj, cls = None) -> Any:
-        pass
+    def __get__(self, obj, cls = None) -> Any: ...
 
     @abstractmethod
-    def __set__(self, obj, value: Any) -> None:
-        pass
+    def __set__(self, obj, value: Any) -> None: ...
 
 
 class DMRPFieldBytes(DMRPFieldBase):

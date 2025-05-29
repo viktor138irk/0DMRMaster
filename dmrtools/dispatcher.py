@@ -46,7 +46,7 @@ class Dispatcher(IDatagramReceiver, IAppDispatcher, IPCDispatcher):
             controller.send_close()
 
     def dispatch_data_packet(self, p: DMRPPacketData, orig_addr: tuple) -> None:
-        logging.debug(f"Dispatching packet from {orig_addr}:\n{p}\n")
+        # logging.debug(f"Dispatching packet from {orig_addr}:\n{p}\n")
 
         call_id = p.stream_id
 
@@ -61,7 +61,7 @@ class Dispatcher(IDatagramReceiver, IAppDispatcher, IPCDispatcher):
                 if len(peers) > 0:
                     call.route_to = peers
 
-        call.packet_received()
+        call.packet_received(p)
 
         if p.is_voice_term:
             call.end()

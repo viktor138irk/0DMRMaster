@@ -7,13 +7,11 @@ from .dmrproto import calc_password_hash
 
 class IPeerAuth(ABC):
     @abstractmethod
-    def allow_peer_id(self, peer_id: int) -> bool:
-        pass
+    def allow_peer_id(self, peer_id: int) -> bool: ...
 
     @abstractmethod
     def check_password(self, peer_id: int, salt: bytes,
-                       pass_hash: bytes) -> bool:
-        pass
+                       pass_hash: bytes) -> bool: ...
 
 
 class AllowAllPeerAuth(IPeerAuth):

@@ -1,44 +1,48 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Self, Type, NoReturn
+from typing import TypeVar, Generic, Type, ClassVar, NoReturn, Any
 
 from .exceptions import FactoryException
 
 
 class IFactoryProduced(ABC):
     @abstractmethod
-    def __init__(self, data: bytes) -> None:
-        pass
+    def __init__(self, data: bytes) -> None: ...
 
     @classmethod
     @abstractmethod
-    def detect_by_data(cls, data: bytes) -> bool:
-        pass
+    def detect_by_data(cls, data: bytes) -> bool: ...
 
 
-class BaseFactory(ABC):
-    __instance: Self|None = None
+TProduced = TypeVar("TProduced", bound=IFactoryProduced, covariant=True)
+
+
+class AbstractFactory(Generic[TProduced], ABC):
+    _instance: ClassVar[AbstractFactory[Any]|None] = None
 
     @classmethod
-    def fd(cls, data: bytes) -> IFactoryProduced:
+    def fd(cls: Type[AbstractFactory[TProduced]],
+           data: bytes) -> TProduced:
         """
         Short singleton version of from_data method
         """
-        if cls.__instance is None:
-            cls.__instance = cls()
-        return cls.__instance.from_data(data)
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance.from_data(data)
 
     def __init__(self,
-                 classes: list[Type[IFactoryProduced]]|None = None) -> None:
-        self._classes: list[Type[IFactoryProduced]] = (
+                 classes: list[Type[TProduced]]|None = None) -> None:
+        self._classes: list[Type[TProduced]] = (
             classes if classes is not None else [])
 
-    def register(self, cls: Type[IFactoryProduced]) -> None:
+    def register(self, cls: Type[TProduced]) -> None:
         self._classes.append(cls)
 
-    def from_data(self, data: bytes) -> IFactoryProduced:
+    def from_data(self, data: bytes) -> TProduced:
         """
         Attempts to create an instance of corresponding
-        IFactoryProduced-implementing class based on data
+        TProduced-implementing class based on data
         """
         for cls in self._classes:
             if cls.detect_by_data(data):

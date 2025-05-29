@@ -18,16 +18,13 @@ class IPCDispatcher(ABC):
     Dispatcher interface to pass into controller to call back
     """
     @abstractmethod
-    def send_dg(self, data: bytes, addr: tuple) -> None:
-        pass
+    def send_dg(self, data: bytes, addr: tuple) -> None: ...
 
     @abstractmethod
-    def get_peer_keeper(self) -> PeerKeeper:
-        pass
+    def get_peer_keeper(self) -> PeerKeeper: ...
 
     @abstractmethod
-    def get_peer_auth(self) -> IPeerAuth:
-        pass
+    def get_peer_auth(self) -> IPeerAuth: ...
 
 
 class PeerController:
