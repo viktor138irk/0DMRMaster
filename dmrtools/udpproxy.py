@@ -3,23 +3,22 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from abc import ABC, abstractmethod
+from typing import Optional
 
 
-class AbstractUDPProxy(ABC):
+class UDPProxy:
     def __init__(self, server_host: str, server_port: int,
                  listen_host: str, listen_port: int) -> None:
-        self.listen_host: str = listen_host
-        self.listen_port: int = listen_port
-        self.server_host: str = server_host
-        self.server_port: int = server_port
+        self.listen_host = listen_host
+        self.listen_port = listen_port
+        self.server_host = server_host
+        self.server_port = server_port
 
-        self.transport_client: asyncio.DatagramTransport|None = None
-        self.transport_server: asyncio.DatagramTransport|None = None
+        self.listener_transport: asyncio.DatagramTransport|None = None
+        self.sessions: dict[tuple[str, int], UDPProxy.Session] = {}
 
-        self.client_address: tuple|None = None
-
-    def on_forward(self, data: bytes, to_server: bool) -> bytes:
+    def on_forward(self, data: bytes, to_server: bool,
+                   client_addr: tuple[str, int]) -> bytes:
         """
         Intercept or modify packet data before forwarding.
         to_server: True means direction from client to server, False otherwise
@@ -29,89 +28,107 @@ class AbstractUDPProxy(ABC):
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
 
-        # Start the listening endpoint for the client
-        self.transport_client, _ = await loop.create_datagram_endpoint(
-            lambda: self.ClientProtocol(self),
+        self.listener_transport, _ = await loop.create_datagram_endpoint(
+            lambda: self.ListenerProtocol(self),
             local_addr=(self.listen_host, self.listen_port)
         )
 
-        logging.info(
-            f"Listening for on {self.listen_host}:{self.listen_port}")
+        logging.info(f"Listening for clients on {self.listen_host}:{self.listen_port}")
 
-    def reset(self) -> None:
-        if self.transport_client:
-            self.transport_client.close()
-        self.transport_client = None
-
-        if self.transport_server:
-            self.transport_server.close()
-        self.transport_server = None
-
-        self.client_address = None
-
-        logging.debug("Proxy reset to LISTENING state")
-
-    async def connect_to_dest(self):
+    async def _create_session(self, client_addr: tuple[str, int]) -> Session:
         loop = asyncio.get_running_loop()
 
-        self.transport_server, _ = await loop.create_datagram_endpoint(
-            lambda: self.ServerProtocol(self),
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda: self.ServerProtocol(self, client_addr),
             remote_addr=(self.server_host, self.server_port)
         )
 
-        logging.info("Proxying "
-              f"{self.client_address[0]}:{self.client_address[1]}"
-              f" <=> {self.server_host}:{self.server_port}")
+        session = UDPProxy.Session(proxy=self,
+                                           client_addr=client_addr,
+                                           server_transport=transport)
 
-    class ClientProtocol(asyncio.DatagramProtocol):
-        def __init__(self, proxy: AbstractUDPProxy) -> None:
-            self.proxy: AbstractUDPProxy = proxy
+        self.sessions[client_addr] = session
 
-        def datagram_received(self, data: bytes, addr: tuple) -> None:
-            if self.proxy.client_address is None:
-                self.proxy.client_address = addr
-                logging.info(f"Client {addr[0]}:{addr[1]} connected")
-                asyncio.create_task(self.proxy.connect_to_dest())
+        logging.info(f"Proxying {client_addr[0]}:{client_addr[1]}"
+                     f" <=> {self.server_host}:{self.server_port}")
 
-            if addr != self.proxy.client_address:
-                logging.error("Ignoring packet from unknown client"
-                      f" {addr[0]}:{addr[1]}")
+        return session
+
+    def remove_session(self, client_addr: tuple[str, int]) -> None:
+        session = self.sessions.pop(client_addr, None)
+        if session:
+            session.server_transport.close()
+            logging.info(f"Closed session for {client_addr}")
+
+    class Session:
+        def __init__(self, proxy: UDPProxy, client_addr: tuple[str, int],
+                     server_transport: asyncio.DatagramTransport) -> None:
+            self.proxy = proxy
+            self.client_addr = client_addr
+            self.server_transport = server_transport
+
+        def handle_from_client(self, data: bytes) -> None:
+            try:
+                data = self.proxy.on_forward(data, to_server=True,
+                                             client_addr=self.client_addr)
+
+                self.server_transport.sendto(data)
+            except Exception as e:
+                logging.error(
+                    "Error forwarding to server for "
+                    f"{self.client_addr[0]}:{self.client_addr[1]}: {e}")
+                self.proxy.remove_session(self.client_addr)
+
+        def handle_from_server(self, data: bytes) -> None:
+            try:
+                data = self.proxy.on_forward(data, to_server=False,
+                                             client_addr=self.client_addr)
+                if self.proxy.listener_transport:
+                    self.proxy.listener_transport.sendto(data, self.client_addr)
+            except Exception as e:
+                logging.error(
+                    "Error forwarding to client "
+                    f"{self.client_addr[0]}:{self.client_addr[1]}: {e}")
+                self.proxy.remove_session(self.client_addr)
+
+    class ListenerProtocol(asyncio.DatagramProtocol):
+        def __init__(self, proxy: UDPProxy) -> None:
+            self.proxy = proxy
+
+        def datagram_received(self, data: bytes,
+                              addr: tuple[str, int]) -> None:
+            session = self.proxy.sessions.get(addr)
+            if not session:
+                asyncio.create_task(self._handle_new_client(data, addr))
                 return
+            session.handle_from_client(data)
 
-            if self.proxy.transport_server:
-                try:
-                    data = self.proxy.on_forward(data, to_server=True)
-                    self.proxy.transport_server.sendto(data)
-                except Exception as e:
-                    logging.error(f"Error forwarding to server: {e}")
-                    self.proxy.reset()
+        async def _handle_new_client(self, data: bytes,
+                                     addr: tuple[str, int]) -> None:
+            session = await self.proxy._create_session(addr)
+            session.handle_from_client(data)
 
-        def error_received(self, exc: Exception|None) -> None:
-            logging.error(f"Client socket error: {exc}")
-            self.proxy.reset()
-
-        def connection_lost(self, exc: Exception|None) -> None:
-            logging.error(f"Client connection lost: {exc}")
-            self.proxy.reset()
+        def error_received(self, exc: Exception) -> None:
+            logging.error(f"Listener socket error: {exc}")
 
     class ServerProtocol(asyncio.DatagramProtocol):
-        def __init__(self, proxy: AbstractUDPProxy) -> None:
-            self.proxy: AbstractUDPProxy = proxy
+        def __init__(self, proxy: UDPProxy,
+                     client_addr: tuple[str, int]) -> None:
+            self.proxy = proxy
+            self.client_addr = client_addr
 
-        def datagram_received(self, data: bytes, addr: tuple) -> None:
-            if self.proxy.transport_client and self.proxy.client_address:
-                try:
-                    data = self.proxy.on_forward(data, to_server=False)
-                    self.proxy.transport_client.sendto(
-                        data, self.proxy.client_address)
-                except Exception as e:
-                    logging.error(f"Error forwarding to client: {e}")
-                    self.proxy.reset()
+        def datagram_received(self, data: bytes,
+                              addr: tuple[str, int]) -> None:
+            session = self.proxy.sessions.get(self.client_addr)
+            if session:
+                session.handle_from_server(data)
 
-        def error_received(self, exc: Exception|None) -> None:
-            logging.error(f"Server socket error: {exc}")
-            self.proxy.reset()
+        def error_received(self, exc: Exception) -> None:
+            logging.error("Server socket error for "
+                          f"{self.client_addr[0]}:{self.client_addr[1]}: {exc}")
+            self.proxy.remove_session(self.client_addr)
 
-        def connection_lost(self, exc: Exception|None) -> None:
-            logging.error(f"Server connection lost: {exc}")
-            self.proxy.reset()
+        def connection_lost(self, exc: Exception | None) -> None:
+            logging.error("Server connection lost for "
+                          f"{self.client_addr[0]}:{self.client_addr[1]}: {exc}")
+            self.proxy.remove_session(self.client_addr)

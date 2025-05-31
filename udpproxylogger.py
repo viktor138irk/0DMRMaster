@@ -3,12 +3,11 @@ import asyncio
 import logging
 import traceback
 
-from dmrtools.udpproxy import AbstractUDPProxy
+from dmrtools.udpproxy import UDPProxy
 from dmrtools import DMRPPacketFactory
 from dmrtools import hexdump
-# from dmrtools.dmrproto import DMRPL2FullLC, DMRPL2VoiceBurst
 from dmrtools.dmrproto import DMRPPacketData
-from dmrtools.dmrproto import EmbLCAssembler, LCFactory
+from dmrtools.dmrproto import CallLCDecoder, LCFactory, LCTalkerAlias
 
 
 def setup_logger(log_file=None):
@@ -25,27 +24,20 @@ def setup_logger(log_file=None):
     )
 
 
-elca: dict[int, EmbLCAssembler] = dict()
+lcd: dict[int, CallLCDecoder] = dict()
 
 def get_packet_details(data):
     try:
         p = DMRPPacketFactory.fd(data)
         if type(p) is DMRPPacketData:
-            emblcinfo = ""
-            if (full_lc := p.get_full_lc()) is not None:
-                lcdec = LCFactory.fd(full_lc)
-                emblcinfo = f"FullLC:{hexdump(full_lc)}\n{lcdec}\n"
-                return f"{p:l2}\n" + emblcinfo
-            if p.stream_id not in elca:
-                elca[p.stream_id] = EmbLCAssembler()
-            if elca[p.stream_id].process_voicedata(p):
-                emblcdata = elca[p.stream_id].decode()
-                lcdec = LCFactory.fd(emblcdata)
-                emblcinfo = f"EmbLC:{hexdump(emblcdata)}\n{lcdec}\n"
-                del elca[p.stream_id]
-            if p.is_voice_term:
-                del elca[p.stream_id]
-            return f"{p:l2}\n" + emblcinfo
+            if p.stream_id not in lcd:
+                lcd[p.stream_id] = CallLCDecoder(p.stream_id)
+            if (lc := lcd[p.stream_id].process_voicedata(p)) is not None:
+                if type(lc) is LCTalkerAlias:
+                    if (ta := lcd[p.stream_id].ta) is not None:
+                        return f"{p:l2}\nLCdata: {hexdump(lc._data)}\n{lc}\nTA: {ta}\n"
+                return f"{p:l2}\nLCdata: {hexdump(lc._data)}\n{lc}\n"
+            return f"{p:l2}\n"
         return f"{p}\n"
     except:
         return f"Exception while decoding packet:\n{traceback.format_exc()}"
@@ -60,9 +52,11 @@ def log_packet(direction, data):
     logging.info(log_message)
 
 
-class UDPProxyLogger(AbstractUDPProxy):
-    def on_forward(self, data: bytes, to_server: bool) -> bytes:
-        direction = "OUT=>" if to_server else "<==IN"
+class UDPProxyLogger(UDPProxy):
+    def on_forward(self, data: bytes, to_server: bool,
+                   client_addr: tuple[str, int]) -> bytes:
+        ca_str = f"{client_addr[0]}:{client_addr[1]}"
+        direction = f"{ca_str} =>" if to_server else f"{ca_str} <="
         log_packet(direction, data)
         return data
 

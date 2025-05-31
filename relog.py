@@ -19,7 +19,7 @@ def main():
             line = line.strip()
             if line.startswith("HD: "):
                 pdata = bytes.fromhex(line[4:])
-                log_packet("DIR", pdata, ('', ''))
+                log_packet("<=??=>", pdata)
 
 
 if __name__ == "__main__":
