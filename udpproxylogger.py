@@ -3,11 +3,10 @@ import asyncio
 import logging
 import traceback
 
-from bitarray import bitarray
-
+from dmrtools.udpproxy import AbstractUDPProxy
 from dmrtools import DMRPPacketFactory
 from dmrtools import hexdump
-from dmrtools.dmrproto import DMRPL2FullLC, DMRPL2VoiceBurst
+# from dmrtools.dmrproto import DMRPL2FullLC, DMRPL2VoiceBurst
 from dmrtools.dmrproto import DMRPPacketData
 from dmrtools.dmrproto import EmbLCAssembler, LCFactory
 
@@ -52,95 +51,33 @@ def get_packet_details(data):
         return f"Exception while decoding packet:\n{traceback.format_exc()}"
 
 
-def log_packet(direction, data, addr):
+def log_packet(direction, data):
     log_message = (
-        f"{direction} {addr[0]}:{addr[1]} | {len(data)} bytes\n"
+        f"{direction} | {len(data)} bytes\n"
         f"HD: {data.hex()}\n{hexdump(data)}\n"
         f"{get_packet_details(data)}"
     )
     logging.info(log_message)
 
 
-class UDPProxyClientProtocol(asyncio.DatagramProtocol):
-    def __init__(self, server_address, loop):
-        self.server_address = server_address
-        self.loop = loop
-        self.transport = None
-        self.server_transport = None
-        self.client_addr = None
-
-    def connection_made(self, transport):
-        self.transport = transport
-        logging.info(f"Listening for client datagrams")
-
-    def datagram_received(self, data, addr):
-        if not self.client_addr:
-            self.client_addr = addr
-            logging.info(f"Client connected from {self.client_addr}")
-
-        log_packet("OUT=>", data, self.server_address)
-
-        # Forward to server
-        self.server_transport.sendto(data)
-
-    def error_received(self, exc):
-        logging.error(f"Client protocol error: {exc}")
-
-    def connection_lost(self, exc):
-        logging.info("Client connection closed")
-
-class UDPProxyServerProtocol(asyncio.DatagramProtocol):
-    def __init__(self, client_protocol):
-        self.client_protocol = client_protocol
-        self.transport = None
-
-    def connection_made(self, transport):
-        self.transport = transport
-        self.client_protocol.server_transport = transport
-        peername = self.transport.get_extra_info('peername')
-        logging.info(f"Connected to server {peername}")
-
-    def datagram_received(self, data, addr):
-        if self.client_protocol.client_addr:
-            log_packet("<==IN", data, self.client_protocol.client_addr)
-
-            # Send data to client
-            self.client_protocol.transport.sendto(
-                data, self.client_protocol.client_addr)
-
-    def error_received(self, exc):
-        logging.error(f"Server protocol error: {exc}")
-
-    def connection_lost(self, exc):
-        logging.info("Server connection closed")
+class UDPProxyLogger(AbstractUDPProxy):
+    def on_forward(self, data: bytes, to_server: bool) -> bytes:
+        direction = "OUT=>" if to_server else "<==IN"
+        log_packet(direction, data)
+        return data
 
 
-async def start_udp_proxy(listen_ip, listen_port, server_ip, server_port):
-    loop = asyncio.get_running_loop()
-
-    server_address = (server_ip, server_port)
-
-    # Create client listener
-    listen = await loop.create_datagram_endpoint(
-        lambda: UDPProxyClientProtocol(server_address, loop),
-        local_addr=(listen_ip, listen_port)
-    )
-    client_transport, client_protocol = listen
-
-    # Connect to server
-    connect = await loop.create_datagram_endpoint(
-        lambda: UDPProxyServerProtocol(client_protocol),
-        remote_addr=server_address
-    )
-    server_transport, server_protocol = connect
-
+async def start_udp_proxy(server_ip, server_port, listen_ip, listen_port):
     logging.info(f"Proxy running: {listen_ip}:{listen_port} <=> {server_ip}:{server_port}")
+
+    proxy = UDPProxyLogger(server_ip, server_port, listen_ip, listen_port)
+    await proxy.start()
 
     try:
         await asyncio.Future()  # Run forever
     finally:
-        client_transport.close()
-        server_transport.close()
+        # await proxy.stop()
+        pass
 
 
 def parse_arguments():
@@ -158,8 +95,8 @@ def main():
     setup_logger(args.log_file)
 
     try:
-        asyncio.run(start_udp_proxy(args.listenip, args.listenport,
-                                    args.serverip, args.serverport))
+        asyncio.run(start_udp_proxy(args.serverip, args.serverport,
+                                    args.listenip, args.listenport))
     except KeyboardInterrupt:
         logging.info("Shutting down.")
 
