@@ -116,29 +116,38 @@ class CallLCDecoder:
 
     @property
     def ta(self) -> str|None:
-        # check if all parts are collected and are instances of LCTalkerAlias
-        if any((flco not in self.lcs or
-                type(self.lcs[flco]) is not LCTalkerAlias)
-               for flco in LCTalkerAlias.FLCOS):
+        return self.get_ta()
+
+    def get_ta(self, partial: bool = False) -> str|None:
+        # check if first part of TA part collected
+        if LCTalkerAlias.FLCOS[0] not in self.lcs:
             return None
 
-        lcta0: LCTalkerAlias = self.lcs[LCTalkerAlias.FLCOS[0]]  # type: ignore[assignment]
+        lcta0 = self.lcs[LCTalkerAlias.FLCOS[0]]
+        if type(lcta0) is not LCTalkerAlias:
+            return None
 
+        # collect all datas
         ta_data: bytes = b""
         for flco in LCTalkerAlias.FLCOS:
-            if type(lc := self.lcs[flco]) is LCTalkerAlias:
+            if flco in self.lcs and type(lc := self.lcs[flco]) is LCTalkerAlias:
                 ta_data += lc.ta_data
 
         ta_len = lcta0.len
+        encoding = "utf-8"
 
         match lcta0.format:
             case LCTalkerAlias.Format._7BIT:
-                return ""  # Not supported; !!TODO: decode 7-bit
+                return None  # Not supported; !!TODO: decode 7-bit
             case LCTalkerAlias.Format.ISO8:
-                return ta_data.decode("iso-8859-1", errors='replace')[:ta_len]
+                encoding = "iso-8859-1"
             case LCTalkerAlias.Format.UTF8:
-                return ta_data.decode("utf-8", errors='replace')[:ta_len]
+                encoding = "utf-8"
             case LCTalkerAlias.Format.UTF16BE:
-                return ta_data.decode("utf-16-be", errors='replace')[:ta_len]
+                encoding = "utf-16-be"
 
-        return None
+        ta_str = ta_data.decode(encoding=encoding, errors='replace')
+        if len(ta_str) < ta_len:  # not collected all TA LCs yet
+            return ta_str if partial else None
+
+        return ta_str[:ta_len]

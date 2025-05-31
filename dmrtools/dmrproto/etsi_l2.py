@@ -178,6 +178,8 @@ class LCTalkerAlias(LCBase):
         return bytes(self._data[2:9])
 
     def __str__(self) -> str:
+        if self.flco != 0x04:
+            return (f"LC TA {self.flco} data:{self.ta_data.hex()}")
         return (f"LC TA {self.flco} fmt:{self.format.name} "
                 f"len:{self.len} data:{self.ta_data.hex()}")
 
